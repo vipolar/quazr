@@ -74,6 +74,7 @@ services:
 
     svelte-kit:
         image: node:20-alpine
+        restart: unless-stopped
         container_name: quazr-sveltekit-dev
         depends_on:
             postgres:
@@ -98,11 +99,11 @@ services:
             - "${SVPORT}:5173"
         networks:
             - quazr-network
-        #profiles: ["dev"]
 
     caddy:
         image: caddy:latest
         restart: unless-stopped
+        container_name: quazr-caddy-server
         volumes:
             - ./quazr-caddy/Caddyfile:/etc/caddy/Caddyfile
             - ./quazr-caddy/config:/config
