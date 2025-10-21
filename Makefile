@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # Folders we need
-DIRS := quazr-adminboard quazr-caddy quazr-caddy/config quazr-caddy/data quazr-data
+DIRS := quazr-adminboard quazr-caddy/config quazr-caddy/data quazr-data
 REPOS := quazr-db quazr-sk
 MAINTAINER := vipolar
 
