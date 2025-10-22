@@ -14,9 +14,10 @@ services:
             - ./quazr-db/init:/docker-entrypoint-initdb.d:ro
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-            interval: 5s
-            timeout: 3s
-            retries: 15
+            start_period: 30s
+            interval: 15s
+            timeout: 5s
+            retries: 5
         networks:
             - quazr-network
 
@@ -63,7 +64,7 @@ services:
             PGADMIN_LISTEN_PORT: 15432
         healthcheck:
             test: ["CMD-SHELL", "wget --quiet --spider --timeout=10 --tries=0 http://localhost:15432/misc/ping"]
-            start_period: 160s
+            start_period: 60s
             interval: 60s
             timeout: 10s
             retries: 3

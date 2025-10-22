@@ -137,6 +137,9 @@ rm-dirs: down
 
 nuke: prune-all rm-repos rm-dirs
 
+health:
+	@sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
 help:
 	@echo "make up            - create dirs and start docker compose"
 	@echo "make down          - stop and remove containers"
