@@ -2,13 +2,13 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-DIRS := quazr-adminboard quazr-caddy/config quazr-caddy/data quazr-caddy quazr-data
-REPOS := quazr-db quazr-sk
+DIRS := quazr-adminboard quazr-caddy/config quazr-caddy/data quazr-caddy quazr-data quazr-authboard
+REPOS := quazr-backend quazr-db quazr-sk
 MAINTAINER := vipolar
 
-.PHONY: initialize check-tools check-user check-env make-dirs clone-repos check-caddyfile up down restart logs ps prune prune-all rm-repos rm-dirs nuke help
+.PHONY: initialize check-tools check-user check-env make-dirs clone-repos chmod-dirs check-caddyfile up down restart logs ps prune prune-all rm-repos rm-dirs nuke help
 
-initialize: check-tools check-user check-env make-dirs clone-repos
+initialize: check-tools check-user check-env make-dirs clone-repos chmod-dirs
 
 check-tools:
 	@echo "❚  Checking required tools..."
@@ -52,6 +52,18 @@ make-dirs:
 		fi; \
 	done
 	@echo "    ✔️  Directory check complete."
+
+chmod-dirs:
+	@echo "❚  Adding required directory permissions..."
+	@for dir in $(DIRS) $(REPOS); do \
+		if [ -d $$dir ]; then \
+			echo "    ◞  Modifying $$dir permissions..."; \
+			sudo chmod -R o+rw $$dir; \
+		else \
+			echo "    ❌  $$dir does not exist."; \
+		fi; \
+	done
+	@echo "    ✔️  Directory permissions modifications complete."
 
 clone-repos:
 	@echo "❚  Reading GH_TOKEN from .env..."

@@ -48,7 +48,7 @@ services:
             - quazr-network
 
     postgres-admin:
-        image: dpage/pgadmin4
+        image: dpage/pgadmin4:9.12
         restart: unless-stopped
         container_name: quazr-postgres-admin
         depends_on:
@@ -56,7 +56,7 @@ services:
                 condition: service_healthy
         volumes:
             - ./quazr-adminboard/servers.json:/pgadmin4/servers.json:rw
-            - pgadmin_data:/var/lib/pgadmin
+            - ./quazr-adminboard:/var/lib/pgadmin:rw
         environment:
             PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
             PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
@@ -70,6 +70,38 @@ services:
             retries: 3
         ports:
             - ${PGADMIN_PORT}:15432
+        networks:
+            - quazr-network
+
+    springboot-backend:
+        image: openjdk:17
+        container_name: quazr-springboot-dev
+        entrypoint: ["./mvnw", "spring-boot:run", "-Dmaven.repo.local=./.repository"]
+        working_dir: /application
+        restart: unless-stopped
+        depends_on:
+            postgres:
+                condition: service_healthy
+            #keycloak
+        volumes:
+            - './quazr-backend:/application:rw'
+        environment:
+            BE_DATABASE_URL: ${BE_DATABASE_URL}
+            BE_DATABASE_PORT: ${BE_DATABASE_PORT}
+            BE_DATABASE_NAME: ${BE_DATABASE_NAME}
+            BE_DATABASE_USER: ${BE_DATABASE_USER}
+            BE_DATABASE_PASS: ${BE_DATABASE_PASS}
+            BE_JPA_SHOW_SQL: ${BE_JPA_SHOW_SQL}
+            BE_CONTEXT_PATH: ${BE_CONTEXT_PATH}
+            BE_PORT: ${BE_PORT}
+        healthcheck:
+            test: ["CMD-SHELL", "wget --quiet --spider --timeout=10 --tries=0 http://localhost:${BE_PORT}"]
+            start_period: 160s
+            interval: 60s
+            timeout: 10s
+            retries: 3
+        ports:
+            - ${BE_PORT}:${BE_PORT}
         networks:
             - quazr-network
 
@@ -92,12 +124,12 @@ services:
             # This could be very scary!
             PGPASSWORD: ${POSTGRES_PASSWORD}
             PGDATABASE: ${POSTGRES_DB}
+            PGPORT: ${POSTGRES_PORT}
             PGUSER: ${POSTGRES_USER}
             PGHOST: postgres
-            PGPORT: 5432
         ports:
-            - "${VHMRPORT}:24678"
-            - "${SVPORT}:5173"
+            - "${VHMR_PORT}:24678"
+            - "${SV_PORT}:5173"
         networks:
             - quazr-network
 
@@ -114,9 +146,6 @@ services:
         ports:
             - 443:443
             - 80:80
-
-volumes:
-    pgadmin_data:
 
 networks:
     quazr-network:
