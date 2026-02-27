@@ -2,13 +2,13 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-DIRS := quazr-adminboard quazr-caddy/config quazr-caddy/data quazr-caddy quazr-data quazr-authboard
-REPOS := quazr-backend quazr-db quazr-sk
 MAINTAINER := vipolar
+REPOS := quazr-backend quazr-db quazr-sk
+DIRS := quazr-adminboard quazr-authboard quazr-backend/.repository quazr-caddy/config quazr-caddy/data quazr-caddy quazr-data quazr-sk/node_modules 
 
-.PHONY: initialize check-tools check-user check-env make-dirs clone-repos chmod-dirs check-caddyfile up down restart logs ps prune prune-all rm-repos rm-dirs nuke help
+.PHONY: initialize check-tools check-user check-env clone-repos make-dirs chmod-dirs check-caddyfile up down restart logs ps prune prune-all rm-repos rm-dirs nuke help
 
-initialize: check-tools check-user check-env make-dirs clone-repos chmod-dirs
+initialize: check-tools check-user check-env clone-repos make-dirs check-caddyfile
 
 check-tools:
 	@echo "❚  Checking required tools..."
@@ -41,6 +41,24 @@ check-env:
 	fi
 	@echo "    ✔️  .env file found."
 
+clone-repos:
+	@echo "❚  Reading GH_TOKEN from .env..."
+	@GH_TOKEN=$$(grep -E '^GH_TOKEN=' .env | cut -d '=' -f2- | tr -d '\r' | xargs); \
+	if [ -z "$$GH_TOKEN" ]; then \
+		echo "    ❌  GH_TOKEN not found or empty in .env"; \
+		exit 1; \
+	fi; \
+	for repo in $(REPOS); do \
+		if [ ! -d "$$repo/.git" ]; then \
+			echo "    ⤓  Cloning $$repo from github.com/$(MAINTAINER)/$$repo.git..."; \
+			git clone "https://$${GH_TOKEN}:x-oauth-basic@github.com/$(MAINTAINER)/$$repo.git" "$$repo" \
+				|| { echo "    ❌  Failed to clone $$repo."; exit 1; }; \
+		else \
+			echo "    ✔️  $$repo already present."; \
+		fi; \
+	done
+	@echo "    ✔️  Repo check complete."
+
 make-dirs:
 	@echo "❚  Creating required directories..."
 	@for dir in $(DIRS); do \
@@ -65,24 +83,6 @@ chmod-dirs:
 	done
 	@echo "    ✔️  Directory permissions modifications complete."
 
-clone-repos:
-	@echo "❚  Reading GH_TOKEN from .env..."
-	@GH_TOKEN=$$(grep -E '^GH_TOKEN=' .env | cut -d '=' -f2- | tr -d '\r' | xargs); \
-	if [ -z "$$GH_TOKEN" ]; then \
-		echo "    ❌  GH_TOKEN not found or empty in .env"; \
-		exit 1; \
-	fi; \
-	for repo in $(REPOS); do \
-		if [ ! -d "$$repo/.git" ]; then \
-			echo "    ⤓  Cloning $$repo from github.com/$(MAINTAINER)/$$repo.git..."; \
-			git clone "https://$${GH_TOKEN}:x-oauth-basic@github.com/$(MAINTAINER)/$$repo.git" "$$repo" \
-				|| { echo "    ❌  Failed to clone $$repo."; exit 1; }; \
-		else \
-			echo "    ✔️  $$repo already present."; \
-		fi; \
-	done
-	@echo "    ✔️  Repo check complete."
-
 check-caddyfile:
 	@echo "❚  Checking for Caddyfile..."
 	@if [ ! -f quazr-caddy/Caddyfile ]; then \
@@ -92,7 +92,7 @@ check-caddyfile:
 	fi
 	@echo "    ✔️  Caddyfile found."
 
-up: initialize check-caddyfile
+up: initialize
 	@echo "❚  Starting Docker Compose..."
 	@sudo docker compose up -d
 	@echo "✨  Services started."

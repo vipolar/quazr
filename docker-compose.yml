@@ -74,6 +74,7 @@ services:
             - quazr-network
 
     springboot-backend:
+        user: 1000:1000
         image: openjdk:17
         container_name: quazr-springboot-dev
         entrypoint: ["./mvnw", "spring-boot:run", "-Dmaven.repo.local=./.repository"]
@@ -82,10 +83,12 @@ services:
         depends_on:
             postgres:
                 condition: service_healthy
-            #keycloak
+            #keycloak:
         volumes:
-            - './quazr-backend:/application:rw'
+            - ./quazr-backend:/application:rw
+            - ./quazr-backend/.repository:/application/.repository
         environment:
+            HOME: /application
             BE_DATABASE_URL: ${BE_DATABASE_URL}
             BE_DATABASE_PORT: ${BE_DATABASE_PORT}
             BE_DATABASE_NAME: ${BE_DATABASE_NAME}
@@ -106,27 +109,27 @@ services:
             - quazr-network
 
     svelte-kit:
+        user: node
         image: node:20-alpine
         restart: unless-stopped
         container_name: quazr-sveltekit-dev
         depends_on:
             postgres:
                 condition: service_healthy
-        working_dir: /app
+        working_dir: /home/node/app
         volumes:
-            - ./quazr-sk:/app
+            - ./quazr-sk:/home/node/app
+            - ./quazr-sk/node_modules:/home/node/app/node_modules
         command: sh -c "npm ci && npm run dev"
         environment:
+            npm_config_cache: /home/node/.npm
             NODE_ENV: development
-            # Polling helps on some hosts
+            HOME: /home/node
             CHOKIDAR_USEPOLLING: "true"
             VITE_FORCE_HMR: "true"
-            # This could be very scary!
-            PGPASSWORD: ${POSTGRES_PASSWORD}
-            PGDATABASE: ${POSTGRES_DB}
-            PGPORT: ${POSTGRES_PORT}
-            PGUSER: ${POSTGRES_USER}
-            PGHOST: postgres
+            PUBLIC_BE_API: ${BE_PUBLIC_API}
+            BE_HOST: springboot-backend
+            BE_PORT: ${BE_PORT}
         ports:
             - "${VHMR_PORT}:24678"
             - "${SV_PORT}:5173"
@@ -150,4 +153,3 @@ services:
 networks:
     quazr-network:
         driver: bridge
-
