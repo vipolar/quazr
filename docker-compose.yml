@@ -48,7 +48,7 @@ services:
             - quazr-network
 
     postgres-admin:
-        image: dpage/pgadmin4:9.12
+        image: dpage/pgadmin4:9.13
         restart: unless-stopped
         container_name: quazr-postgres-admin
         depends_on:
@@ -105,6 +105,32 @@ services:
             retries: 3
         ports:
             - ${BE_PORT}:${BE_PORT}
+        networks:
+            - quazr-network
+
+    springboot-backend-watcher:
+        user: 1000:1000
+        image: openjdk:17
+        container_name: quazr-springboot-dev-tests
+        entrypoint: ["./mvnw", "com.fizzed:watcher-maven-plugin:run", "-Dmaven.repo.local=./.repository"]
+        working_dir: /application
+        restart: unless-stopped
+        depends_on:
+            postgres:
+                condition: service_healthy
+        volumes:
+            - ./quazr-backend:/application:rw
+            - ./quazr-backend/.repository:/application/.repository
+        environment:
+            HOME: /application
+            BE_DATABASE_URL: ${BE_DATABASE_URL}
+            BE_DATABASE_PORT: ${BE_DATABASE_PORT}
+            BE_DATABASE_NAME: ${BE_DATABASE_NAME}
+            BE_DATABASE_USER: ${BE_DATABASE_USER}
+            BE_DATABASE_PASS: ${BE_DATABASE_PASS}
+            BE_JPA_SHOW_SQL: ${BE_JPA_SHOW_SQL}
+            BE_CONTEXT_PATH: ${BE_CONTEXT_PATH}
+            BE_PORT: ${BE_PORT}
         networks:
             - quazr-network
 
