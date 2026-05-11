@@ -36,7 +36,6 @@ services:
             '
             set -e
             echo "Waiting for Postgres..."
-            # pg_isready is already available in the image via depends_on healthcheck
             echo "Applying migrations..."
             for f in /migrations/*.sql; do
                 echo "Running $$f"
