@@ -6,7 +6,7 @@ DIRS := quazr-authboard
 
 GH_TOKEN := $(shell grep -E '^GH_TOKEN=' .env | cut -d '=' -f2- | tr -d '\r' | xargs)
 
-.PHONY: setup validate-tools validate-user validate-env validate-token schema postgresql pgadmin frontend backend rabbitmq rustfs sharp caddy init up down restart logs ps prune prune-all health help
+.PHONY: setup validate-tools validate-user validate-env validate-token schema postgresql pgadmin frontend backend rabbitmq rustfs sharp caddy init up down restart status logs health prune prune-all help
 
 setup:
 	@if [ -z "$(SERVICE)" ]; then \
@@ -189,11 +189,14 @@ restart:
 	@$(MAKE) down
 	@$(MAKE) up
 
+status:
+	@sudo docker compose ps
+
 logs:
 	@sudo docker compose logs -f --tail=100
 
-ps:
-	@sudo docker compose ps
+health:
+	@sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 prune: down
 	@echo "⚠️  Pruning dangling Docker resources (no volumes)..."
@@ -212,17 +215,16 @@ prune-all: down
 		echo "    ✘  Cancelled."; \
 	fi
 
-health:
-	@sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
 help:
-	@echo "make up            - create dirs and start docker compose"
+	@echo "Usage: make [service] to setup individual services, or make [command] for stack management"
+	@echo "Services: schema, postgresql, pgadmin, frontend, backend, rabbitmq, rustfs, sharp, caddy"
+	@echo "make init          - validate environment, pull repos, and setup volumes"
+	@echo "make up            - initialize services and start docker compose"
 	@echo "make down          - stop and remove containers"
 	@echo "make restart       - restart the stack"
 	@echo "make logs          - tail logs"
-	@echo "make ps            - show container status"
+	@echo "make status        - show container status"
+	@echo "make health        - show container health status"
 	@echo "make prune         - prune dangling docker resources (safe)"
 	@echo "make prune-all     - aggressive prune (includes volumes; DATA LOSS!)"
-	@echo "make rm-repos      - delete cloned repositories (data loss risk)"
-	@echo "make rm-dirs       - delete data directories (data loss risk)"
-	@echo "make nuke          - nuke all data (data loss risk)"
+	@echo "make help          - display this message"
