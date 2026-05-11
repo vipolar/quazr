@@ -6,7 +6,7 @@ DIRS := quazr-authboard
 
 GH_TOKEN := $(shell grep -E '^GH_TOKEN=' .env | cut -d '=' -f2- | tr -d '\r' | xargs)
 
-.PHONY: setup validate-tools validate-user validate-env validate-token schema postgresql pgadmin frontend backend rabbitmq rustfs sharp caddy init up down restart status logs health prune prune-all help
+.PHONY: setup validate-tools validate-user validate-env validate-token schema postgresql pgadmin frontend backend rabbitmq rustfs sharp caddy init up down restart logs status health prune nuke help
 
 setup:
 	@if [ -z "$(SERVICE)" ]; then \
@@ -206,8 +206,8 @@ prune: down
 	@sudo docker network prune -f
 	@echo "    ✔️  Prune complete."
 
-prune-all: down
-	@echo "⚠️  Aggressive prune will remove unused VOLUMES (data loss risk)."
+nuke: down
+	@echo "⚠️  Aggressive prune will remove all containers and volumes (data loss risk)."
 	@read -p 'Type "YES" to continue: ' ans; \
 	if [ "$$ans" = "YES" ]; then \
 		sudo docker system prune -af --volumes; \
@@ -226,5 +226,5 @@ help:
 	@echo "make status        - show container status"
 	@echo "make health        - show container health status"
 	@echo "make prune         - prune dangling docker resources (safe)"
-	@echo "make prune-all     - aggressive prune (includes volumes; DATA LOSS!)"
+	@echo "make nuke          - aggressive prune (includes volumes; DATA LOSS!)"
 	@echo "make help          - display this message"
