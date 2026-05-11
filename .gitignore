@@ -1,8 +1,11 @@
 .env
-quazr-sk/
 quazr-db/
 quazr-data/
 quazr-caddy/
 quazr-backend/
 quazr-authboard/
 quazr-adminboard/
+quazr-rabbitmq/
+quazr-rustfs3/
+quazr-sharp/
+quazr-sk/

@@ -2,13 +2,64 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-MAINTAINER := vipolar
-REPOS := quazr-backend quazr-db quazr-sk
-DIRS := quazr-adminboard quazr-authboard quazr-backend/.repository quazr-caddy/config quazr-caddy/data quazr-caddy quazr-data quazr-sk/node_modules 
+DIRS := quazr-authboard 
+
+GH_TOKEN := $(shell grep -E '^GH_TOKEN=' .env | cut -d '=' -f2- | tr -d '\r' | xargs)
 
 .PHONY: initialize check-tools check-user check-env clone-repos make-dirs chmod-dirs check-caddyfile up down restart logs ps prune prune-all rm-repos rm-dirs nuke help
 
-initialize: check-tools check-user check-env clone-repos make-dirs check-caddyfile
+setup:
+	@if [ -z "$(SERVICE)" ]; then \
+		echo "Error: SERVICE parameter is required"; \
+		exit 1; \
+	fi
+	@echo "❚  Setting up $(SERVICE) service..."
+	@if [ ! -z "$(REPOSITORY)" ] && [ ! -z "$(MAINTAINER)" ] && [ ! -z "$(REPOSITORY_URL)" ]; then \
+		echo "    ♦  Validating service repository..."; \
+		if [ ! -d "$(REPOSITORY)/.git" ]; then \
+			echo "        ⤓  Cloning $(REPOSITORY) from github.com/$(MAINTAINER)/$(REPOSITORY).git..."; \
+			GIT_TRACE=1 git clone "$(REPOSITORY_URL)" "$(REPOSITORY)" \
+				|| { echo "        ❌  Failed to clone $(REPOSITORY)."; exit 1; }; \
+		else \
+			echo "        ✔️  $(REPOSITORY) already present."; \
+		fi; \
+	fi
+	@if [ ! -z "$(DIRECTORY)" ] || [ ! -z "$(SUB_DIRECTORIES)" ]; then \
+		echo "    ♦  Validating required directories..."; \
+		for dir in $(DIRECTORY) $(SUB_DIRECTORIES); do \
+			if [ ! -d $$dir ]; then \
+				echo "        ◞  Creating $$dir..."; \
+				mkdir $$dir; \
+			else \
+				echo "        ✔️  $$dir already exists."; \
+			fi; \
+		done; \
+		if [ ! -z "$(PERMISSIONS)" ]; then \
+			echo "    ♦  Validating directory permissions..."; \
+			for dir in $(DIRECTORY) $(SUB_DIRECTORIES); do \
+				CURRENT_PERMISSIONS=$$(stat -c '%a' $$dir); \
+				if [ "$$CURRENT_PERMISSIONS" != "$(PERMISSIONS)" ]; then \
+					echo "        ◞  Updating permissions for $$dir ($$CURRENT_PERMISSIONS → $(PERMISSIONS))..."; \
+					sudo chmod $(PERMISSIONS) $$dir; \
+				else \
+					echo "        ✔️  $$dir permissions already correct ($(PERMISSIONS))."; \
+				fi; \
+			done; \
+		fi; \
+		if [ ! -z "$(OWNER)" ]; then \
+			echo "    ♦  Validating directory ownership..."; \
+			for dir in $(DIRECTORY) $(SUB_DIRECTORIES); do \
+				CURRENT_OWNER=$$(stat -c '%u:%g' $$dir); \
+				if [ "$$CURRENT_OWNER" != "$(OWNER)" ]; then \
+					echo "        ◞  Updating ownership for $$dir ($$CURRENT_OWNER → $(OWNER))..."; \
+					sudo chown $(OWNER) $$dir; \
+				else \
+					echo "        ✔️  $$dir ownership already correct ($(OWNER))."; \
+				fi; \
+			done; \
+		fi; \
+	fi
+	@echo "    ✔️  $(SERVICE) setup complete."
 
 check-tools:
 	@echo "❚  Checking required tools..."
@@ -41,60 +92,97 @@ check-env:
 	fi
 	@echo "    ✔️  .env file found."
 
-clone-repos:
+check-token:
 	@echo "❚  Reading GH_TOKEN from .env..."
-	@GH_TOKEN=$$(grep -E '^GH_TOKEN=' .env | cut -d '=' -f2- | tr -d '\r' | xargs); \
-	if [ -z "$$GH_TOKEN" ]; then \
+	@if [ -z "$(GH_TOKEN)" ]; then \
 		echo "    ❌  GH_TOKEN not found or empty in .env"; \
 		exit 1; \
-	fi; \
-	for repo in $(REPOS); do \
-		if [ ! -d "$$repo/.git" ]; then \
-			echo "    ⤓  Cloning $$repo from github.com/$(MAINTAINER)/$$repo.git..."; \
-			git clone "https://$${GH_TOKEN}:x-oauth-basic@github.com/$(MAINTAINER)/$$repo.git" "$$repo" \
-				|| { echo "    ❌  Failed to clone $$repo."; exit 1; }; \
-		else \
-			echo "    ✔️  $$repo already present."; \
-		fi; \
-	done
-	@echo "    ✔️  Repo check complete."
+	fi
 
-make-dirs:
-	@echo "❚  Creating required directories..."
-	@for dir in $(DIRS); do \
-		if [ ! -d $$dir ]; then \
-			echo "    ◞  Creating $$dir..."; \
-			mkdir -p $$dir; \
-		else \
-			echo "    ✔️  $$dir already exists."; \
-		fi; \
-	done
-	@echo "    ✔️  Directory check complete."
-
-chmod-dirs:
-	@echo "❚  Adding required directory permissions..."
-	@for dir in $(DIRS) $(REPOS); do \
-		if [ -d $$dir ]; then \
-			echo "    ◞  Modifying $$dir permissions..."; \
-			sudo chmod -R o+rw $$dir; \
-		else \
-			echo "    ❌  $$dir does not exist."; \
-		fi; \
-	done
-	@echo "    ✔️  Directory permissions modifications complete."
-
-check-caddyfile:
+CADDY_DIRECTORY := quazr-caddy
+CADDY_DIRECTORY_PERMISSIONS := 755
+CADDY_DIRECTORY_OWNER := 1000:1000
+CADDY_SUB_DIRECTORIES := $(CADDY_DIRECTORY)/config $(CADDY_DIRECTORY)/data
+caddyfile:
+	$(MAKE) --no-print-directory setup SERVICE=Caddy DIRECTORY=$(CADDY_DIRECTORY) SUB_DIRECTORIES="$(CADDY_SUB_DIRECTORIES)" PERMISSIONS=$(CADDY_DIRECTORY_PERMISSIONS) OWNER=$(CADDY_DIRECTORY_OWNER);
 	@echo "❚  Checking for Caddyfile..."
-	@if [ ! -f quazr-caddy/Caddyfile ]; then \
-		echo "    ❌  quazr-caddy/Caddyfile not found!"; \
-		echo "        Please create one before running 'make up'."; \
+	@if [ ! -f $(CADDY_DIRECTORY)/Caddyfile ]; then \
+		echo "    ❌  $(CADDY_DIRECTORY)/Caddyfile not found!"; \
+		echo "        Please create one before running 'make up.'"; \
 		exit 1; \
 	fi
-	@echo "    ✔️  Caddyfile found."
+	@echo "    ✔️  Caddyfile present."
+
+SCHEMA_DIRECTORY := quazr-db
+SCHEMA_REPOSITORY := quazr-db
+SCHEMA_DIRECTORY_PERMISSIONS := 755
+SCHEMA_DIRECTORY_OWNER := 1000:1000
+SCHEMA_REPOSITORY_MAINTAINER := vipolar
+SCHEMA_REPOSITORY_URL := https://$(GH_TOKEN):x-oauth-basic@github.com/$(SCHEMA_REPOSITORY_MAINTAINER)/$(SCHEMA_REPOSITORY).git
+schema: check-token
+	$(MAKE) --no-print-directory setup SERVICE=Schema DIRECTORY=$(SCHEMA_DIRECTORY) PERMISSIONS=$(SCHEMA_DIRECTORY_PERMISSIONS) OWNER=$(SCHEMA_DIRECTORY_OWNER) REPOSITORY=$(SCHEMA_REPOSITORY) MAINTAINER=$(SCHEMA_REPOSITORY_MAINTAINER) REPOSITORY_URL=$(SCHEMA_REPOSITORY_URL);
+
+POSTGRESQL_DIRECTORY := quazr-data
+POSTGRESQL_DIRECTORY_PERMISSIONS := 700
+POSTGRESQL_DIRECTORY_OWNER := 999:1000
+postgresql:
+	$(MAKE) --no-print-directory setup SERVICE=PostgreSQL DIRECTORY=$(POSTGRESQL_DIRECTORY) PERMISSIONS=$(POSTGRESQL_DIRECTORY_PERMISSIONS) OWNER=$(POSTGRESQL_DIRECTORY_OWNER);
+
+PGADMIN_DIRECTORY := quazr-adminboard
+PGADMIN_DIRECTORY_PERMISSIONS := 755
+PGADMIN_DIRECTORY_OWNER := 5050:5050
+pgadmin:
+	$(MAKE) --no-print-directory setup SERVICE=pgAdmin DIRECTORY=$(PGADMIN_DIRECTORY) PERMISSIONS=$(PGADMIN_DIRECTORY_PERMISSIONS) OWNER=$(PGADMIN_DIRECTORY_OWNER);
+
+FRONTEND_DIRECTORY := quazr-sk
+FRONTEND_DIRECTORY_PERMISSIONS := 755
+FRONTEND_DIRECTORY_OWNER := 1000:1000
+FRONTEND_REPOSITORY := quazr-sk
+FRONTEND_REPOSITORY_MAINTAINER := vipolar
+FRONTEND_SUB_DIRECTORIES := $(FRONTEND_DIRECTORY)/node_modules
+FRONTEND_REPOSITORY_URL := https://$(GH_TOKEN):x-oauth-basic@github.com/$(FRONTEND_REPOSITORY_MAINTAINER)/$(FRONTEND_REPOSITORY).git
+frontend: check-token
+	$(MAKE) --no-print-directory setup SERVICE=Frontend DIRECTORY=$(FRONTEND_DIRECTORY) SUB_DIRECTORIES="$(FRONTEND_SUB_DIRECTORIES)" PERMISSIONS=$(FRONTEND_DIRECTORY_PERMISSIONS) OWNER=$(FRONTEND_DIRECTORY_OWNER) REPOSITORY=$(FRONTEND_REPOSITORY) MAINTAINER=$(FRONTEND_REPOSITORY_MAINTAINER) REPOSITORY_URL=$(FRONTEND_REPOSITORY_URL);
+
+BACKEND_DIRECTORY := quazr-backend
+BACKEND_DIRECTORY_PERMISSIONS := 755
+BACKEND_DIRECTORY_OWNER := 1000:1000
+BACKEND_REPOSITORY := quazr-backend
+BACKEND_REPOSITORY_MAINTAINER := vipolar
+BACKEND_SUB_DIRECTORIES := $(BACKEND_DIRECTORY)/.repository
+BACKEND_REPOSITORY_URL := https://$(GH_TOKEN):x-oauth-basic@github.com/$(BACKEND_REPOSITORY_MAINTAINER)/$(BACKEND_REPOSITORY).git
+backend: check-token
+	$(MAKE) --no-print-directory setup SERVICE=Backend DIRECTORY=$(BACKEND_DIRECTORY) SUB_DIRECTORIES="$(BACKEND_SUB_DIRECTORIES)" PERMISSIONS=$(BACKEND_DIRECTORY_PERMISSIONS) OWNER=$(BACKEND_DIRECTORY_OWNER) REPOSITORY=$(BACKEND_REPOSITORY) MAINTAINER=$(BACKEND_REPOSITORY_MAINTAINER) REPOSITORY_URL=$(BACKEND_REPOSITORY_URL);
+
+RABBITMQ_DIRECTORY := quazr-rabbitmq
+RABBITMQ_DIRECTORY_PERMISSIONS := 755
+RABBITMQ_DIRECTORY_OWNER := 1000:1000
+RABBITMQ_SUB_DIRECTORIES := "$(RABBITMQ_DIRECTORY)/data $(RABBITMQ_DIRECTORY)/logs"
+rabbitmq:
+	$(MAKE) --no-print-directory setup SERVICE=RabbitMQ DIRECTORY=$(RABBITMQ_DIRECTORY) SUB_DIRECTORIES=$(RABBITMQ_SUB_DIRECTORIES) PERMISSIONS=$(RABBITMQ_DIRECTORY_PERMISSIONS) OWNER=$(RABBITMQ_DIRECTORY_OWNER); \
+
+RUSTFS_DIRECTORY := quazr-rustfs3
+RUSTFS_DIRECTORY_PERMISSIONS := 755
+RUSTFS_DIRECTORY_OWNER := 10001:10001
+RUSTFS_SUB_DIRECTORIES := "$(RUSTFS_DIRECTORY)/data $(RUSTFS_DIRECTORY)/logs"
+rustfs:
+	$(MAKE) --no-print-directory setup SERVICE=RustFS DIRECTORY=$(RUSTFS_DIRECTORY) SUB_DIRECTORIES=$(RUSTFS_SUB_DIRECTORIES) PERMISSIONS=$(RUSTFS_DIRECTORY_PERMISSIONS) OWNER=$(RUSTFS_DIRECTORY_OWNER); \
+
+SHARP_DIRECTORY := quazr-sharp
+SHARP_DIRECTORY_PERMISSIONS := 755
+SHARP_DIRECTORY_OWNER := 1000:1000
+SHARP_REPOSITORY := quazr-sharp
+SHARP_REPOSITORY_MAINTAINER := vipolar
+SHARP_SUB_DIRECTORIES := $(SHARP_DIRECTORY)/node_modules
+SHARP_REPOSITORY_URL := https://$(GH_TOKEN):x-oauth-basic@github.com/$(SHARP_REPOSITORY_MAINTAINER)/$(SHARP_REPOSITORY).git
+sharp: check-token
+	$(MAKE) --no-print-directory setup SERVICE=Sharp DIRECTORY=$(SHARP_DIRECTORY) SUB_DIRECTORIES="$(SHARP_SUB_DIRECTORIES)" PERMISSIONS=$(SHARP_DIRECTORY_PERMISSIONS) OWNER=$(SHARP_DIRECTORY_OWNER) REPOSITORY=$(SHARP_REPOSITORY) MAINTAINER=$(SHARP_REPOSITORY_MAINTAINER) REPOSITORY_URL=$(SHARP_REPOSITORY_URL);
+
+initialize: check-tools check-user check-env check-token caddyfile schema postgresql pgadmin frontend backend rabbitmq rustfs sharp
 
 up: initialize
 	@echo "❚  Starting Docker Compose..."
-	@sudo docker compose up -d
+	@sudo docker compose --profile observability up -d
 	@echo "✨  Services started."
 
 down:

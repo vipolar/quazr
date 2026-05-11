@@ -48,7 +48,7 @@ services:
             - quazr-network
 
     postgres-admin:
-        image: dpage/pgadmin4:9.13
+        image: dpage/pgadmin4:9.14
         restart: unless-stopped
         container_name: quazr-postgres-admin
         depends_on:
@@ -73,9 +73,66 @@ services:
         networks:
             - quazr-network
 
-    springboot-backend:
+    rabbitmq:
+        image: rabbitmq:management
+        container_name: quazr-rabbitmq
+        hostname: rabbitmq-server
+        restart: unless-stopped
+        volumes:
+            - ./quazr-rabbitmq/data:/var/lib/rabbitmq
+            - ./quazr-rabbitmq/logs:/var/log/rabbitmq
+        environment:
+            RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+            RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+            RABBITMQ_NODENAME: rabbit@rabbitmq-server
+        healthcheck:
+            test: rabbitmq-diagnostics -q ping
+            start_period: 40s
+            interval: 30s
+            timeout: 10s
+            retries: 5
+        ports:
+            - "${RABBITMQ_AMQP_PORT}:5672"
+            - "${RABBITMQ_GUI_PORT}:15672"
+        deploy:
+            resources:
+                limits:
+                    memory: 2G
+                    cpus: '2'
+                reservations:
+                    memory: 1G
+                    cpus: '1'
+        networks:
+            - quazr-network
+
+    rustfs:
+        image: rustfs/rustfs:latest
+        container_name: quazr-rustfs
+        restart: unless-stopped
+        depends_on:
+            postgres:
+                condition: service_healthy
+        environment:
+            RUSTFS_ACCESS_KEY: ${RUSTFS_USER}
+            RUSTFS_SECRET_KEY: ${RUSTFS_PASSWORD}
+        healthcheck:
+            test: ["CMD", "sh", "-c", "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/rustfs/console/health"]
+            start_period: 40s
+            interval: 30s
+            timeout: 10s
+            retries: 3
+        ports:
+            - "${RUSTFS_S3_PORT}:9000"
+            - "${RUSTFS_WEB_PORT}:9001"
+        volumes:
+            - ./quazr-rustfs3/data:/data:z
+            - ./quazr-rustfs3/logs:/logs:z
+        networks:
+            - quazr-network
+
+    springboot:
         user: 1000:1000
-        image: openjdk:17
+        image: eclipse-temurin:25-jdk
         container_name: quazr-springboot-dev
         entrypoint: ["./mvnw", "spring-boot:run", "-Dmaven.repo.local=./.repository"]
         working_dir: /application
@@ -83,24 +140,36 @@ services:
         depends_on:
             postgres:
                 condition: service_healthy
+            rabbitmq:
+                condition: service_healthy
+            rustfs:
+                condition: service_healthy
             #keycloak:
         volumes:
             - ./quazr-backend:/application:rw
             - ./quazr-backend/.repository:/application/.repository
         environment:
             HOME: /application
-            BE_DATABASE_URL: ${BE_DATABASE_URL}
+            BE_BROKER_HOST: ${BE_BROKER_HOST}
+            BE_BROKER_USER: ${RABBITMQ_USER}
+            BE_BROKER_PASSWORD: ${RABBITMQ_PASSWORD}
+            BE_BROKER_PORT: ${RABBITMQ_AMQP_PORT}
+            BE_DATABASE_HOST: ${BE_DATABASE_HOST}
             BE_DATABASE_PORT: ${BE_DATABASE_PORT}
             BE_DATABASE_NAME: ${BE_DATABASE_NAME}
             BE_DATABASE_USER: ${BE_DATABASE_USER}
-            BE_DATABASE_PASS: ${BE_DATABASE_PASS}
+            BE_DATABASE_PASSWORD: ${BE_DATABASE_PASSWORD}
             BE_JPA_SHOW_SQL: ${BE_JPA_SHOW_SQL}
             BE_CONTEXT_PATH: ${BE_CONTEXT_PATH}
+            BE_BUCKET_PORT: ${RUSTFS_S3_PORT}
+            BE_BUCKET_HOST: ${BE_BUCKET_HOST}
+            BE_BUCKET_PASS: ${RUSTFS_PASSWORD}
+            BE_BUCKET_KEY: ${RUSTFS_USER}
             BE_PORT: ${BE_PORT}
         healthcheck:
-            test: ["CMD-SHELL", "wget --quiet --spider --timeout=10 --tries=0 http://localhost:${BE_PORT}"]
-            start_period: 160s
-            interval: 60s
+            test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/${BE_PORT}"]
+            start_period: 40s
+            interval: 30s
             timeout: 10s
             retries: 3
         ports:
@@ -108,57 +177,93 @@ services:
         networks:
             - quazr-network
 
-    springboot-backend-watcher:
+    springboot-watcher:
         user: 1000:1000
-        image: openjdk:17
+        image: eclipse-temurin:25-jdk
         container_name: quazr-springboot-dev-tests
         entrypoint: ["./mvnw", "com.fizzed:watcher-maven-plugin:run", "-Dmaven.repo.local=./.repository"]
         working_dir: /application
         restart: unless-stopped
         depends_on:
-            postgres:
+            springboot:
                 condition: service_healthy
         volumes:
             - ./quazr-backend:/application:rw
             - ./quazr-backend/.repository:/application/.repository
         environment:
             HOME: /application
-            BE_DATABASE_URL: ${BE_DATABASE_URL}
+            BE_BROKER_HOST: ${BE_BROKER_HOST}
+            BE_BROKER_USER: ${RABBITMQ_USER}
+            BE_BROKER_PASSWORD: ${RABBITMQ_PASSWORD}
+            BE_BROKER_PORT: ${RABBITMQ_AMQP_PORT}
+            BE_DATABASE_HOST: ${BE_DATABASE_HOST}
             BE_DATABASE_PORT: ${BE_DATABASE_PORT}
             BE_DATABASE_NAME: ${BE_DATABASE_NAME}
             BE_DATABASE_USER: ${BE_DATABASE_USER}
-            BE_DATABASE_PASS: ${BE_DATABASE_PASS}
+            BE_DATABASE_PASSWORD: ${BE_DATABASE_PASSWORD}
             BE_JPA_SHOW_SQL: ${BE_JPA_SHOW_SQL}
             BE_CONTEXT_PATH: ${BE_CONTEXT_PATH}
+            BE_BUCKET_PORT: ${RUSTFS_S3_PORT}
+            BE_BUCKET_HOST: ${BE_BUCKET_HOST}
+            BE_BUCKET_PASS: ${RUSTFS_PASSWORD}
+            BE_BUCKET_KEY: ${RUSTFS_USER}
             BE_PORT: ${BE_PORT}
         networks:
             - quazr-network
 
     svelte-kit:
         user: node
-        image: node:20-alpine
-        restart: unless-stopped
+        image: node:24.15.0-slim
         container_name: quazr-sveltekit-dev
+        restart: unless-stopped
         depends_on:
-            postgres:
+            springboot:
                 condition: service_healthy
         working_dir: /home/node/app
         volumes:
             - ./quazr-sk:/home/node/app
             - ./quazr-sk/node_modules:/home/node/app/node_modules
-        command: sh -c "npm ci && npm run dev"
+        command: sh -c "npm i && npm run dev"
         environment:
             npm_config_cache: /home/node/.npm
             NODE_ENV: development
             HOME: /home/node
-            CHOKIDAR_USEPOLLING: "true"
             VITE_FORCE_HMR: "true"
+            CHOKIDAR_USEPOLLING: "true"
             PUBLIC_BE_API: ${BE_PUBLIC_API}
-            BE_HOST: springboot-backend
+            BE_HOST: springboot
             BE_PORT: ${BE_PORT}
         ports:
             - "${VHMR_PORT}:24678"
             - "${SV_PORT}:5173"
+        networks:
+            - quazr-network
+
+    sharp:
+        user: node
+        image: node:24.15.0-slim
+        container_name: quazr-sharp-image
+        restart: unless-stopped
+        depends_on:
+            springboot:
+                condition: service_healthy
+        working_dir: /home/node/app
+        volumes:
+            - ./quazr-sharp:/home/node/app
+            - ./quazr-sharp/node_modules:/home/node/app/node_modules
+        command: sh -c "npm i --omit=dev && npm run start"
+        environment:
+            npm_config_cache: /home/node/.npm
+            NODE_ENV: development
+            HOME: /home/node
+            BE_BROKER_HOST: ${BE_BROKER_HOST}
+            BE_BROKER_USER: ${RABBITMQ_USER}
+            BE_BROKER_PASSWORD: ${RABBITMQ_PASSWORD}
+            BE_BROKER_PORT: ${RABBITMQ_AMQP_PORT}
+            BE_BUCKET_PORT: ${RUSTFS_S3_PORT}
+            BE_BUCKET_HOST: ${BE_BUCKET_HOST}
+            BE_BUCKET_PASS: ${RUSTFS_PASSWORD}
+            BE_BUCKET_KEY: ${RUSTFS_USER}
         networks:
             - quazr-network
 
